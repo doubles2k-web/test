@@ -31,12 +31,12 @@ const THEME = {
 // 👥 손님 종류 - 새 손님을 추가하려면 이 배열에 항목을 추가하세요!
 // ============================================================
 const customerTypes = [
-  { name: '학생',   patience: 20, pay: 1000, img: '/images/student.png' },
-  { name: '직장인', patience: 15, pay: 1500, img: '/images/worker.png'  },
-  { name: '할머니', patience: 25, pay: 800,  img: '/images/grandma.png' },
-  { name: '아이',   patience: 12, pay: 2000, img: '/images/child.png'   },
+  { name: '학생',   patience: 20, pay: 1000, img: process.env.PUBLIC_URL + '/images/student.png' },
+  { name: '직장인', patience: 15, pay: 1500, img: process.env.PUBLIC_URL + '/images/worker.png'  },
+  { name: '할머니', patience: 25, pay: 800,  img: process.env.PUBLIC_URL + '/images/grandma.png' },
+  { name: '아이',   patience: 12, pay: 2000, img: process.env.PUBLIC_URL + '/images/child.png'   },
 ];
-const vipCustomer = { name: 'VIP', patience: 8, pay: 5000, img: '/images/vip.png' };
+const vipCustomer = { name: 'VIP', patience: 8, pay: 5000, img: process.env.PUBLIC_URL + '/images/vip.png' };
 
 // ============================================================
 // 📖 튜토리얼 내용 - 각 단계별 설명을 여기서 바꿀 수 있어요!
@@ -396,9 +396,13 @@ const BungeoppangTycoon = () => {
 
   // ── 이미지 경로 ───────────────────────────────────────────
   const IMAGES = {
-    empty: '/images/empty.png', dough: '/images/dough.png',
-    red: '/images/cooking1.png', cooking: '/images/cooking2.png',
-    ready: '/images/ready.png', burnt: '/images/burnt.png'
+    empty: process.env.PUBLIC_URL + '/images/empty.png',
+    dough: process.env.PUBLIC_URL + '/images/dough.png',
+    red: process.env.PUBLIC_URL + '/images/cooking1.png',
+    cooking: process.env.PUBLIC_URL + '/images/cooking2.png',
+    ready: process.env.PUBLIC_URL + '/images/ready.png',
+    burnt: process.env.PUBLIC_URL + '/images/burnt.png',
+    child: process.env.PUBLIC_URL + '/images/child.png'
   };
 
   // ── 💰 파티클 생성 함수 ───────────────────────────────────
