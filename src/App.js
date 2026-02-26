@@ -124,7 +124,7 @@ const ScreenFlash = ({ flash }) => {
 // ============================================================
 // 🏆 랭킹 화면
 // ============================================================
-const RankingScreen = ({ onClose, currentScore, currentLevel }) => {
+const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 0 }) => {
   const [rankings, setRankings]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [nickname, setNickname]   = useState('');
@@ -147,11 +147,32 @@ const RankingScreen = ({ onClose, currentScore, currentLevel }) => {
 
   const handleSubmit = async () => {
     if (!nickname.trim() || submitting) return;
+
+    // ✅ 의심 점수 자동 차단
+    // 레벨당 현실적으로 얻을 수 있는 최대 점수를 계산해요.
+    // 예: 레벨 3이면 최대 80,000점. 이보다 높으면 치트로 판단!
+    const maxRealisticScore = currentLevel * 10000 + 50000;
+    if (currentScore > maxRealisticScore) {
+      alert('⚠️ 비정상적인 점수가 감지되어 등록이 거부되었습니다.');
+      return;
+    }
+
+    // ✅ 플레이 시간 검증
+    // 점수 1,000점을 얻으려면 최소 3초는 걸려야 해요.
+    // 예: 10,000점인데 플레이 시간이 5초면 치트로 판단!
+    const minPlaySeconds = Math.floor(currentScore / 1000) * 3;
+    if (currentPlayTime < minPlaySeconds) {
+      alert('⚠️ 플레이 시간이 너무 짧아요! 정상적인 플레이가 아닌 것 같아요.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       await addDoc(collection(db, 'rankings'), {
         nickname: nickname.trim().slice(0, 10),
-        score: currentScore, level: currentLevel, createdAt: new Date(),
+        score: currentScore, level: currentLevel,
+        playTime: currentPlayTime, // 플레이 시간도 함께 저장
+        createdAt: new Date(),
       });
       setSubmitted(true);
       const updated = await fetchRankings();
@@ -331,6 +352,7 @@ const BungeoppangTycoon = () => {
   const [showRanking, setShowRanking]   = useState(false);
   const [showHomeConfirm, setShowHomeConfirm] = useState(false);
   const [isPaused, setIsPaused]         = useState(false);
+  const [gameStartTime, setGameStartTime] = useState(null); // ✅ 게임 시작 시간 기록용
 
   const [money, setMoney]         = useState(0);
   const [score, setScore]         = useState(0);
@@ -356,6 +378,44 @@ const BungeoppangTycoon = () => {
   const toastTimer         = useRef(null);
   const comboTimer         = useRef(null);
   const particleIdRef      = useRef(0);
+
+  // ============================================================
+  // 🤖 봇 감지 시스템
+  // 클릭 간격을 기록해서 패턴이 너무 일정하면 봇으로 판단해요
+  // ============================================================
+  const clickTimestamps    = useRef([]);  // 최근 클릭 시간 기록
+  const botWarningCount    = useRef(0);   // 경고 횟수
+  const isBotBlocked       = useRef(false); // 봇으로 차단됐는지 여부
+
+  // 봇 여부 판단 함수
+  const checkBotPattern = useCallback(() => {
+    const times = clickTimestamps.current;
+    if (times.length < 10) return false; // 클릭이 10번 미만이면 판단 안 함
+
+    // 최근 10번 클릭의 간격(ms) 계산
+    const intervals = [];
+    for (let i = 1; i < times.length; i++) {
+      intervals.push(times[i] - times[i - 1]);
+    }
+
+    // ① 최소 클릭 간격 체크: 80ms 미만이면 사람이 물리적으로 불가능
+    const tooFast = intervals.filter(v => v < 80).length;
+    const isTooFast = tooFast >= 3; // 10번 중 3번 이상 80ms 미만
+
+    // ② 클릭 간격 분산 체크: 너무 일정하면 봇
+    const avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    const variance = intervals.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / intervals.length;
+    const isTooPerfect = variance < 400 && avg < 500; // 분산이 400 미만이면 비정상적으로 일정함
+
+    // ③ 과다 클릭 체크: 3초 안에 20번 이상
+    const now = Date.now();
+    const recentClicks = times.filter(t => now - t < 3000).length;
+    const isTooMany = recentClicks >= 20;
+
+    // 3가지 중 2가지 이상 해당하면 봇으로 판단
+    const suspiciousCount = [isTooFast, isTooPerfect, isTooMany].filter(Boolean).length;
+    return suspiciousCount >= 2;
+  }, []);
 
   // 📱 모바일 오디오 잠금 해제
   useEffect(() => {
@@ -431,6 +491,11 @@ const BungeoppangTycoon = () => {
     setCustomers([]); setParticles([]);
     setPans(Array(GAME_CONFIG.panCount).fill(null).map((_, i) => ({ id: i, state: 'empty', progress: 0 })));
     setGameState('playing'); setIsPaused(false);
+    setGameStartTime(Date.now()); // ✅ 게임 시작 시간 기록
+    // 봇 감지 초기화
+    clickTimestamps.current = [];
+    botWarningCount.current = 0;
+    isBotBlocked.current = false;
   };
 
   const handleStartGame = () => {
@@ -498,6 +563,31 @@ const BungeoppangTycoon = () => {
   const handlePanClick = (panId) => {
     unlockAudio();
     if (screen !== 'playing' || gameState !== 'playing' || isPaused) return;
+
+    // 🤖 봇 감지 체크
+    if (isBotBlocked.current) {
+      showToast('🤖 비정상적인 플레이가 감지됐어요!', 'warning');
+      return;
+    }
+    // 클릭 시간 기록 (최근 20개만 유지)
+    clickTimestamps.current.push(Date.now());
+    if (clickTimestamps.current.length > 20) clickTimestamps.current.shift();
+
+    // 봇 패턴 감지
+    if (checkBotPattern()) {
+      botWarningCount.current += 1;
+      if (botWarningCount.current >= 3) {
+        // 경고 3회 이상 → 점수 등록 차단 플래그
+        isBotBlocked.current = true;
+        showToast('🤖 봇 사용이 감지됐어요! 랭킹 등록이 차단됩니다.', 'warning');
+        sound('warning');
+        return;
+      }
+      showToast(`🤖 비정상적인 클릭 패턴! 경고 ${botWarningCount.current}/3`, 'warning');
+      sound('warning');
+      return;
+    }
+
     const MIN = GAME_CONFIG.goodTimingMin;
     setPans(prev => prev.map(pan => {
       if (pan.id !== panId) return pan;
@@ -722,12 +812,18 @@ const BungeoppangTycoon = () => {
                   </div>
                 ))}
               </div>
-              <button onClick={() => { sound('sell'); setShowRanking(true); }} style={styles.rankingButton}>🏆 랭킹 등록하기</button>
+              <button onClick={() => {
+                if (isBotBlocked.current) {
+                  showToast('🤖 봇 사용이 감지되어 랭킹 등록이 차단됐어요!', 'warning');
+                  return;
+                }
+                sound('sell'); setShowRanking(true);
+              }} style={styles.rankingButton}>🏆 랭킹 등록하기</button>
               <button onClick={() => { resetGame(); setScreen('playing'); showToast('다시 시작! 화이팅! 💪','normal'); }} style={styles.restartButton}>다시 시작 🔥</button>
               <button onClick={() => { resetGame(); setScreen('title'); }} style={styles.titleButton}>타이틀로 돌아가기</button>
             </div>
           </div>
-          {showRanking && <RankingScreen onClose={() => setShowRanking(false)} currentScore={score} currentLevel={level} />}
+          {showRanking && <RankingScreen onClose={() => setShowRanking(false)} currentScore={score} currentLevel={level} currentPlayTime={Math.floor((Date.now() - (gameStartTime || Date.now())) / 1000)} />}
         </>
       )}
 
