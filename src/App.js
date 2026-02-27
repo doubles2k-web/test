@@ -316,7 +316,7 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
   return (
     <div style={{ position:'fixed', inset:0, zIndex:9995, pointerEvents:'auto' }}>
       <div style={{ ...RS.dim, zIndex:9995 }} onClick={onClose} />
-      <div style={{ ...RS.modal, zIndex:9996 }}>
+      <div style={{ ...RS.modal, zIndex:9996 }} onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
         <button onClick={onClose} style={RS.closeBtn}>✕</button>
         <div style={RS.title}>{isDaily ? '🏆 오늘 랭킹 TOP 10' : '🏆 랭킹 TOP 10'}</div>
 
@@ -347,11 +347,15 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
                   <input type="text" placeholder="닉네임 입력 (최대 10자)"
                     value={nickname} onChange={e => setNickname(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-                    maxLength={10} style={RS.input}
+                    onClick={e => e.stopPropagation()}
+                    maxLength={10} style={{ ...RS.input, touchAction:'manipulation' }}
                     inputMode="text" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
                   />
-                  <button onClick={handleSubmit} disabled={!nickname.trim() || submitting}
-                    style={{ ...RS.submitBtn, opacity: !nickname.trim() || submitting ? 0.5 : 1, pointerEvents: !nickname.trim() || submitting ? 'none' : 'auto' }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleSubmit(); }}
+                    onTouchEnd={(e) => { e.stopPropagation(); }}
+                    disabled={!nickname.trim() || submitting}
+                    style={{ ...RS.submitBtn, opacity: !nickname.trim() || submitting ? 0.5 : 1, pointerEvents: !nickname.trim() || submitting ? 'none' : 'auto', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>
                     {submitting ? '...' : '등록'}
                   </button>
                 </div>
@@ -1016,7 +1020,7 @@ const titleStyles = {
 
 const tutorialStyles = {
   dim:          { position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', zIndex:8000 },
-  modal:        { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:8001, background:'linear-gradient(135deg,#1a0f00,#2d1b00)', border:`2px solid rgba(255,171,0,0.5)`, borderRadius:'20px', padding:'24px 20px 20px', width:'80%', maxWidth:'340px', boxShadow:'0 20px 60px rgba(0,0,0,0.8),0 0 30px rgba(255,107,0,0.2)', animation:'modalPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275)', maxHeight:'60vh', overflowY:'auto' },
+  modal:        { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:8001, background:'linear-gradient(135deg,#1a0f00,#2d1b00)', border:`2px solid rgba(255,171,0,0.5)`, borderRadius:'20px', padding:'24px 20px 20px', width:'80%', maxWidth:'340px', boxShadow:'0 20px 60px rgba(0,0,0,0.8),0 0 30px rgba(255,107,0,0.2)', animation:'modalPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275)', maxHeight:'85vh', overflowY:'auto' },
   closeBtn:     { position:'absolute', top:'12px', right:'14px', background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', color:'rgba(255,255,255,0.6)', width:'28px', height:'28px', borderRadius:'50%', fontSize:'12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' },
   modalTitle:   { textAlign:'center', fontSize:'15px', fontWeight:'800', color:THEME.accentGold, marginBottom:'14px', letterSpacing:'1px' },
   dots:         { display:'flex', justifyContent:'center', gap:'7px', marginBottom:'18px' },
@@ -1034,7 +1038,7 @@ const tutorialStyles = {
 
 const rankingStyles = {
   dim:        { position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:9992 },
-  modal:      { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:9993, background:'linear-gradient(135deg,#1a0f00,#2d1b00)', border:`2px solid rgba(255,214,0,0.5)`, borderRadius:'20px', padding:'24px 20px 20px', width:'80%', maxWidth:'360px', boxShadow:'0 20px 60px rgba(0,0,0,0.9),0 0 40px rgba(255,171,0,0.15)', animation:'modalPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275)', maxHeight:'60vh', overflowY:'auto', display:'flex', flexDirection:'column' },
+  modal:      { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:9993, background:'linear-gradient(135deg,#1a0f00,#2d1b00)', border:`2px solid rgba(255,214,0,0.5)`, borderRadius:'20px', padding:'24px 20px 20px', width:'80%', maxWidth:'360px', boxShadow:'0 20px 60px rgba(0,0,0,0.9),0 0 40px rgba(255,171,0,0.15)', animation:'modalPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275)', height:'80vh', maxHeight:'560px', overflowY:'auto', display:'flex', flexDirection:'column' },
   closeBtn:   { position:'absolute', top:'12px', right:'14px', background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', color:'rgba(255,255,255,0.6)', width:'28px', height:'28px', borderRadius:'50%', fontSize:'12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' },
   // ── 탭 버튼 줄 ──
   tabRow:       { display:'flex', gap:'8px', marginBottom:'14px', background:'rgba(0,0,0,0.3)', borderRadius:'20px', padding:'4px' },
