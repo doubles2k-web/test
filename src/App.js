@@ -4,7 +4,7 @@
 // ============================================================
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
 
 // 게임 데이터 불러오기 (손님, 색상, 튜토리얼 등)
 import { THEME, PAN_IMAGES, customerTypes, vipCustomer, TUTORIAL_STEPS, GAME_CONFIG } from './gameData';
@@ -125,23 +125,42 @@ const ScreenFlash = ({ flash }) => {
 // 🏆 랭킹 화면
 // ============================================================
 const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 0 }) => {
-  const [rankings, setRankings]   = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [nickname, setNickname]   = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const [rankings, setRankings]     = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [nickname, setNickname]     = useState('');
+  const [submitted, setSubmitted]   = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [myRank, setMyRank]       = useState(null);
+  const [myRank, setMyRank]         = useState(null);
+  // 랭킹을 불러온 뒤, 내 점수가 10위 안에 드는지 미리 계산해요
+  const [canEnter, setCanEnter]     = useState(null); // null=아직모름, true=가능, false=불가
+  const [totalRank, setTotalRank]   = useState(null); // 10위 밖일 때 전체 순위
 
   const fetchRankings = useCallback(async () => {
     try {
-      const q = query(collection(db, 'rankings'), orderBy('score', 'desc'), limit(10));
-      const snapshot = await getDocs(q);
-      const data = snapshot.docs.map((doc, i) => ({ id: doc.id, rank: i + 1, ...doc.data() }));
-      setRankings(data);
-      return data;
+      // 전체 점수 불러와서 내 순위 계산 (최대 1000개까지만 확인)
+      const qAll = query(collection(db, 'rankings'), orderBy('score', 'desc'));
+      const snapAll = await getDocs(qAll);
+      const allScores = snapAll.docs.map(d => d.data().score);
+
+      // 내 점수보다 높은 점수가 몇 개인지 세면 내 순위가 나와요
+      const myPosition = allScores.filter(s => s > currentScore).length + 1;
+
+      // TOP 10만 화면에 표시
+      const top10 = snapAll.docs.slice(0, 10).map((doc, i) => ({ id: doc.id, rank: i + 1, ...doc.data() }));
+      setRankings(top10);
+
+      // 10위 안에 드는지 판별
+      // 현재 TOP10 중 가장 낮은 점수보다 내 점수가 높거나, 아직 10명이 안 찼으면 등록 가능
+      if (currentScore > 0) {
+        const isInTop10 = top10.length < 10 || currentScore > (top10[top10.length - 1]?.score ?? 0);
+        setCanEnter(isInTop10);
+        if (!isInTop10) setTotalRank(myPosition);
+      }
+
+      return top10;
     } catch(e) { console.error('랭킹 불러오기 실패:', e); return []; }
     finally { setLoading(false); }
-  }, []);
+  }, [currentScore]);
 
   useEffect(() => { fetchRankings(); }, [fetchRankings]);
 
@@ -149,19 +168,15 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
     if (!nickname.trim() || submitting) return;
 
     // ✅ 의심 점수 자동 차단
-    // 레벨당 현실적으로 얻을 수 있는 최대 점수를 계산해요.
-    // 예: 레벨 3이면 최대 80,000점. 이보다 높으면 치트로 판단!
-    const maxRealisticScore = currentLevel * 10000 + 50000;
+    const maxRealisticScore = currentLevel * 30000 + 200000;
     if (currentScore > maxRealisticScore) {
       alert('⚠️ 비정상적인 점수가 감지되어 등록이 거부되었습니다.');
       return;
     }
 
-    // ✅ 플레이 시간 검증
-    // 점수 1,000점을 얻으려면 최소 3초는 걸려야 해요.
-    // 예: 10,000점인데 플레이 시간이 5초면 치트로 판단!
-    const minPlaySeconds = Math.floor(currentScore / 1000) * 3;
-    if (currentPlayTime < minPlaySeconds) {
+    // 플레이 시간 검증 (currentPlayTime이 0이면 건너뜀)
+    const minPlaySeconds = Math.floor(currentScore / 10000);
+    if (currentPlayTime > 0 && currentPlayTime < minPlaySeconds) {
       alert('⚠️ 플레이 시간이 너무 짧아요! 정상적인 플레이가 아닌 것 같아요.');
       return;
     }
@@ -171,14 +186,14 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
       await addDoc(collection(db, 'rankings'), {
         nickname: nickname.trim().slice(0, 10),
         score: currentScore, level: currentLevel,
-        playTime: currentPlayTime, // 플레이 시간도 함께 저장
+        playTime: currentPlayTime,
         createdAt: new Date(),
       });
       setSubmitted(true);
       const updated = await fetchRankings();
       const myIdx = updated.findIndex(r => r.nickname === nickname.trim() && r.score === currentScore);
       if (myIdx !== -1) setMyRank(myIdx + 1);
-    } catch(e) { console.error('점수 등록 실패:', e); }
+    } catch(e) { console.error('점수 등록 실패:', e); alert('등록 중 오류가 발생했어요. 다시 시도해주세요.'); }
     finally { setSubmitting(false); }
   };
 
@@ -186,32 +201,62 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
   const RS = rankingStyles;
 
   return (
-    <>
-      <div style={RS.dim} onClick={onClose} />
-      <div style={RS.modal}>
+    // ⚠️ 클릭 이벤트가 뚫리도록 pointerEvents:'auto' 를 명시적으로 설정해요
+    <div style={{ position:'fixed', inset:0, zIndex:9995, pointerEvents:'auto' }}>
+      <div style={{ ...RS.dim, zIndex:9995 }} onClick={onClose} />
+      <div style={{ ...RS.modal, zIndex:9996 }}>
         <button onClick={onClose} style={RS.closeBtn}>✕</button>
         <div style={RS.title}>🏆 전체 랭킹 TOP 10</div>
 
-        {currentScore > 0 && !submitted && (
-          <div style={RS.submitBox}>
-            <div style={RS.submitScore}>
-              내 점수: <span style={{ color:THEME.accentGold, fontWeight:'900' }}>{currentScore.toLocaleString()}점</span>
-            </div>
-            <div style={RS.inputRow}>
-              <input type="text" placeholder="닉네임 입력 (최대 10자)"
-                value={nickname} onChange={e => setNickname(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-                maxLength={10} style={RS.input}
-                inputMode="text" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
-              />
-              <button onClick={handleSubmit} disabled={!nickname.trim() || submitting}
-                style={{ ...RS.submitBtn, opacity: !nickname.trim() || submitting ? 0.5 : 1 }}>
-                {submitting ? '...' : '등록'}
-              </button>
-            </div>
-          </div>
+        {/* ── 점수 등록 영역 ── */}
+        {currentScore > 0 && !submitted && !loading && (
+          <>
+            {/* 10위 안에 들면: 닉네임 입력창 표시 */}
+            {canEnter && (
+              <div style={RS.submitBox}>
+                <div style={RS.submitScore}>
+                  내 점수: <span style={{ color:THEME.accentGold, fontWeight:'900' }}>{currentScore.toLocaleString()}점</span>
+                  <span style={{ fontSize:'11px', color:'#4ade80', marginLeft:'8px', fontWeight:'700' }}>🎉 TOP 10 진입!</span>
+                </div>
+                <div style={RS.inputRow}>
+                  <input type="text" placeholder="닉네임 입력 (최대 10자)"
+                    value={nickname} onChange={e => setNickname(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+                    maxLength={10} style={RS.input}
+                    inputMode="text" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                  />
+                  <button
+                    onClick={handleSubmit}
+                    disabled={!nickname.trim() || submitting}
+                    style={{ ...RS.submitBtn, opacity: !nickname.trim() || submitting ? 0.5 : 1, pointerEvents: !nickname.trim() || submitting ? 'none' : 'auto' }}
+                  >
+                    {submitting ? '...' : '등록'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 10위 밖이면: 아쉬움 문구만 표시 */}
+            {canEnter === false && (
+              <div style={{
+                background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,171,0,0.2)',
+                borderRadius:'12px', padding:'14px 16px', marginBottom:'14px', textAlign:'center',
+              }}>
+                <div style={{ fontSize:'13px', color:'rgba(255,248,240,0.6)', marginBottom:'4px' }}>
+                  내 점수: <span style={{ color:THEME.accentGold, fontWeight:'900' }}>{currentScore.toLocaleString()}점</span>
+                </div>
+                <div style={{ fontSize:'15px', fontWeight:'900', color:'#fff', lineHeight:'1.6' }}>
+                  😢 아쉽지만 전체 <span style={{ color:THEME.accentYellow }}>{totalRank}위</span>예요!
+                </div>
+                <div style={{ fontSize:'12px', color:'rgba(255,248,240,0.5)', marginTop:'4px' }}>
+                  다시 한번 도전?! 💪
+                </div>
+              </div>
+            )}
+          </>
         )}
 
+        {/* 등록 성공 메시지 */}
         {submitted && myRank && (
           <div style={RS.myRankBox}>🎉 {myRank <= 10 ? `${myRank}위로 등록됐어요!` : '랭킹에 등록됐어요!'}</div>
         )}
@@ -245,7 +290,7 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 };
 
@@ -738,7 +783,7 @@ const BungeoppangTycoon = () => {
                         background: c.isVIP ? 'linear-gradient(135deg,#b45309,#d97706)' : 'linear-gradient(135deg,#dc2626,#ef4444)',
                         boxShadow: c.isVIP ? '0 0 8px rgba(251,191,36,0.8)' : '0 2px 8px rgba(239,68,68,0.5)' }}>×{c.orderCount}</div>
                   }
-                  <img src={c.img} alt={c.name} style={{ ...styles.customerImage,
+                  <img src={process.env.PUBLIC_URL + c.img} alt={c.name} style={{ ...styles.customerImage,
                     filter: c.isVIP ? 'drop-shadow(0 0 10px gold) drop-shadow(0 0 20px rgba(255,214,0,0.5))' : 'drop-shadow(0 3px 8px rgba(0,0,0,0.5))' }} />
                   <div style={styles.patienceBar}>
                     <div style={{ ...styles.patienceFill,
@@ -823,9 +868,9 @@ const BungeoppangTycoon = () => {
               <button onClick={() => { resetGame(); setScreen('title'); }} style={styles.titleButton}>타이틀로 돌아가기</button>
             </div>
           </div>
-          {showRanking && <RankingScreen onClose={() => setShowRanking(false)} currentScore={score} currentLevel={level} currentPlayTime={Math.floor((Date.now() - (gameStartTime || Date.now())) / 1000)} />}
         </>
       )}
+      {screen === 'gameover' && showRanking && <RankingScreen onClose={() => setShowRanking(false)} currentScore={score} currentLevel={level} currentPlayTime={gameStartTime ? Math.floor((Date.now() - gameStartTime) / 1000) : 9999} />}
 
       {/* 🏠 홈으로 가기 확인 팝업 */}
       {showHomeConfirm && (
