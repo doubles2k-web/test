@@ -49,6 +49,9 @@ if (typeof document !== 'undefined') {
     @keyframes floatEmoji { 0%{transform:translateY(0) rotate(0deg)} 100%{transform:translateY(-18px) rotate(8deg)} }
     @keyframes modalPop { 0%{transform:translate(-50%,-50%) scale(0.8);opacity:0} 100%{transform:translate(-50%,-50%) scale(1);opacity:1} }
     @keyframes emojiPop { 0%{transform:scale(0.5) rotate(-10deg);opacity:0} 70%{transform:scale(1.15) rotate(5deg)} 100%{transform:scale(1) rotate(0deg);opacity:1} }
+    @keyframes dimFadeIn { 0%{opacity:0} 100%{opacity:1} }
+    @keyframes gameoverSlideUp { 0%{opacity:0;transform:translate(-50%,-50%) translateY(60px)} 65%{opacity:1;transform:translate(-50%,-50%) translateY(-8px)} 100%{opacity:1;transform:translate(-50%,-50%) translateY(0)} }
+    @keyframes gameoverTitlePulse { 0%,100%{text-shadow:0 0 20px rgba(255,71,87,0.7),0 0 40px rgba(255,71,87,0.4)} 50%{text-shadow:0 0 40px rgba(255,71,87,1),0 0 80px rgba(255,71,87,0.6)} }
     button:active { transform:scale(0.94); }
     ::-webkit-scrollbar { display:none; }
     .ranking-list::-webkit-scrollbar { display:block; width:4px; }
@@ -491,6 +494,8 @@ const BungeoppangTycoon = () => {
   const [showHomeConfirm, setShowHomeConfirm] = useState(false);
   const [isPaused, setIsPaused]         = useState(false);
   const [gameStartTime, setGameStartTime] = useState(null); // ✅ 게임 시작 시간 기록용
+  // 게임 오버 애니메이션 단계: 'idle' → 'intro'(딤+텍스트 등장) → 'done'(결과박스)
+  const [gameoverPhase, setGameoverPhase] = useState('idle');
 
   const [money, setMoney]         = useState(0);
   const [score, setScore]         = useState(0);
@@ -516,6 +521,7 @@ const BungeoppangTycoon = () => {
   const toastTimer         = useRef(null);
   const comboTimer         = useRef(null);
   const particleIdRef      = useRef(0);
+  const gameoverTimer      = useRef(null); // 게임오버 애니메이션 타이머
 
   // ============================================================
   // 🤖 봇 감지 시스템
@@ -567,6 +573,22 @@ const BungeoppangTycoon = () => {
       document.removeEventListener('click',      handler);
     };
   }, []);
+
+  // 🎬 게임 오버 애니메이션 자동 시퀀스
+  // gameState가 'gameover'가 되면 → 딤+텍스트 등장(intro) → 2초 후 랭킹 팝업 자동 오픈(done)
+  useEffect(() => {
+    if (gameState === 'gameover') {
+      setGameoverPhase('intro'); // 딤 페이드인 + Game Over 텍스트 등장
+      gameoverTimer.current = setTimeout(() => {
+        setGameoverPhase('done'); // 2초 후 랭킹 팝업 자동 오픈
+        if (!isBotBlocked.current) setShowRanking(true);
+      }, 2000);
+    } else {
+      setGameoverPhase('idle'); // 게임 재시작 시 초기화
+      if (gameoverTimer.current) clearTimeout(gameoverTimer.current);
+    }
+    return () => { if (gameoverTimer.current) clearTimeout(gameoverTimer.current); };
+  }, [gameState]);
 
   // 스크롤/줌 방지
   useEffect(() => {
@@ -930,40 +952,96 @@ const BungeoppangTycoon = () => {
         </div>
       </div>
 
-      {/* 게임 오버 */}
-      {screen === 'gameover' && (
+      {/* ─── 게임 오버 — 단계별 애니메이션 ─── */}
+      {screen === 'gameover' && gameoverPhase !== 'idle' && (
         <>
-          <div style={{ ...styles.dimBackground, zIndex:5000 }} onClick={(e) => e.stopPropagation()} />
-          <div style={{ ...styles.gameoverContainer, zIndex:5001 }}>
-            <div style={styles.gameoverBox}>
-              <div style={styles.gameoverTitle}>게임 오버!</div>
-              <div style={styles.gameoverEmoji}>😭</div>
-              <div style={styles.gameoverStats}>
-                {[
-                  { label:'최종 점수', value:`${score.toLocaleString()}점` },
-                  { label:'최종 레벨', value:`레벨 ${level}` },
-                  { label:'총 수입',   value:`${money.toLocaleString()}원` },
-                ].map(({ label, value }) => (
-                  <div key={label} style={styles.gameoverStat}>
-                    <span style={styles.gameoverLabel}>{label}</span>
-                    <span style={styles.gameoverValue}>{value}</span>
-                  </div>
-                ))}
+          {/* ① 딤 배경: 서서히 페이드인 */}
+          <div style={{
+            ...styles.dimBackground, zIndex:5000,
+            animation:'dimFadeIn 0.55s ease forwards',
+          }} onClick={(e) => e.stopPropagation()} />
+
+          {/* ② intro 단계: "GAME OVER" 텍스트가 아래서 위로 스르륵 등장 (약 1초) */}
+          {gameoverPhase === 'intro' && (
+            <div style={{
+              position:'fixed', top:'42%', left:'50%',
+              zIndex:5001, textAlign:'center', pointerEvents:'none',
+              animation:'gameoverSlideUp 1.0s cubic-bezier(0.215,0.610,0.355,1.000) forwards',
+            }}>
+              {/* 큰 GAME OVER 타이틀 */}
+              <div style={{
+                fontSize:'clamp(32px,9vw,52px)', fontWeight:'900',
+                color:'#ff4757', letterSpacing:'3px', lineHeight:1,
+                fontFamily:"'Impact','Pretendard',sans-serif",
+                textShadow:'0 0 30px rgba(255,71,87,0.8),0 0 60px rgba(255,71,87,0.4)',
+                animation:'gameoverTitlePulse 1.2s ease-in-out infinite',
+                marginBottom:'14px',
+              }}>
+                GAME OVER
               </div>
-              <button onClick={() => {
-                if (isBotBlocked.current) {
-                  showToast('🤖 봇 사용이 감지되어 랭킹 등록이 차단됐어요!', 'warning');
-                  return;
-                }
-                sound('sell'); setShowRanking(true);
-              }} style={styles.rankingButton}>🏆 랭킹 등록하기</button>
-              <button onClick={() => { resetGame(); setScreen('playing'); showToast('다시 시작! 화이팅! 💪','normal'); }} style={styles.restartButton}>다시 시작 🔥</button>
-              <button onClick={() => { resetGame(); setScreen('title'); }} style={styles.titleButton}>타이틀로 돌아가기</button>
+              {/* 이모지 */}
+              <div style={{ fontSize:'56px', lineHeight:1, filter:'drop-shadow(0 4px 16px rgba(255,71,87,0.5))' }}>
+                😭
+              </div>
+              {/* 점수 미리보기 */}
+              <div style={{
+                marginTop:'16px', fontSize:'16px', color:'rgba(255,248,240,0.85)',
+                fontWeight:'700', letterSpacing:'0.5px',
+              }}>
+                최종 점수: <span style={{ color:'#ffd600', fontWeight:'900', fontSize:'20px' }}>
+                  {score.toLocaleString()}점
+                </span>
+              </div>
+              <div style={{
+                marginTop:'8px', fontSize:'12px', color:'rgba(255,248,240,0.4)',
+                fontWeight:'600', animation:'flashFade 1s ease-in-out infinite alternate',
+              }}>
+                잠시 후 랭킹 화면이 열려요...
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* ③ done 단계: 랭킹 닫은 후 → 결과 박스 + 버튼들 */}
+          {gameoverPhase === 'done' && !showRanking && (
+            <div style={{ ...styles.gameoverContainer, zIndex:5001 }}>
+              <div style={{ ...styles.gameoverBox, animation:'modalPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275)' }}>
+                <div style={styles.gameoverTitle}>게임 오버!</div>
+                <div style={styles.gameoverEmoji}>😭</div>
+                <div style={styles.gameoverStats}>
+                  {[
+                    { label:'최종 점수', value:`${score.toLocaleString()}점` },
+                    { label:'최종 레벨', value:`레벨 ${level}` },
+                    { label:'총 수입',   value:`${money.toLocaleString()}원` },
+                  ].map(({ label, value }) => (
+                    <div key={label} style={styles.gameoverStat}>
+                      <span style={styles.gameoverLabel}>{label}</span>
+                      <span style={styles.gameoverValue}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => {
+                  if (isBotBlocked.current) {
+                    showToast('🤖 봇 사용이 감지되어 랭킹 등록이 차단됐어요!', 'warning');
+                    return;
+                  }
+                  sound('sell'); setShowRanking(true);
+                }} style={styles.rankingButton}>🏆 랭킹 등록하기</button>
+                <button onClick={() => { resetGame(); setScreen('playing'); showToast('다시 시작! 화이팅! 💪','normal'); }} style={styles.restartButton}>다시 시작 🔥</button>
+                <button onClick={() => { resetGame(); setScreen('title'); }} style={styles.titleButton}>타이틀로 돌아가기</button>
+              </div>
+            </div>
+          )}
         </>
       )}
-      {screen === 'gameover' && showRanking && <RankingScreen onClose={() => setShowRanking(false)} currentScore={score} currentLevel={level} currentPlayTime={gameStartTime ? Math.floor((Date.now() - gameStartTime) / 1000) : 9999} onStartGame={handleStartGame} />}
+      {/* 랭킹 팝업 (게임오버 후 자동 오픈) */}
+      {screen === 'gameover' && showRanking && (
+        <RankingScreen
+          onClose={() => setShowRanking(false)}
+          currentScore={score} currentLevel={level}
+          currentPlayTime={gameStartTime ? Math.floor((Date.now() - gameStartTime) / 1000) : 9999}
+          onStartGame={handleStartGame}
+        />
+      )}
 
       {/* 🏠 홈으로 가기 확인 팝업 */}
       {showHomeConfirm && (
