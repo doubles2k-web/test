@@ -122,64 +122,106 @@ const ScreenFlash = ({ flash }) => {
 };
 
 // ============================================================
-// 🏆 랭킹 화면
+// 🏆 랭킹 화면 (일간 / 전체 탭 구분)
 // ============================================================
-const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 0 }) => {
-  const [rankings, setRankings]     = useState([]);
-  const [loading, setLoading]       = useState(true);
+const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 0, onStartGame }) => {
+  // ── 탭 상태: 'daily' = 일간 랭킹, 'alltime' = 전체 랭킹
+  const [activeTab, setActiveTab]   = useState('daily');
+
+  // ── 전체 랭킹 관련 상태
+  const [allRankings, setAllRankings]   = useState([]);
+  const [allLoading, setAllLoading]     = useState(true);
+  const [allCanEnter, setAllCanEnter]   = useState(null);
+  const [allTotalRank, setAllTotalRank] = useState(null);
+
+  // ── 일간 랭킹 관련 상태
+  const [dailyRankings, setDailyRankings] = useState([]);
+  const [dailyLoading, setDailyLoading]   = useState(true);
+  const [dailyCanEnter, setDailyCanEnter] = useState(null);
+  const [dailyTotalRank, setDailyTotalRank] = useState(null);
+
+  // ── 공통 닉네임 / 등록 상태
   const [nickname, setNickname]     = useState('');
   const [submitted, setSubmitted]   = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [myRank, setMyRank]         = useState(null);
-  // 랭킹을 불러온 뒤, 내 점수가 10위 안에 드는지 미리 계산해요
-  const [canEnter, setCanEnter]     = useState(null); // null=아직모름, true=가능, false=불가
-  const [totalRank, setTotalRank]   = useState(null); // 10위 밖일 때 전체 순위
+  const [myAllRank, setMyAllRank]   = useState(null);
+  const [myDailyRank, setMyDailyRank] = useState(null);
 
-  const fetchRankings = useCallback(async () => {
+  // 오늘 날짜를 "2025년 6월 15일" 형식으로 만들어요
+  const todayLabel = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`;
+  })();
+
+  // 오늘 자정(00:00:00) 기준 Date 객체 — 일간 랭킹 필터링에 사용해요
+  const todayStart = (() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  })();
+
+  // ── 전체 랭킹 불러오기
+  const fetchAllRankings = useCallback(async () => {
+    setAllLoading(true);
     try {
-      // 전체 점수 불러와서 내 순위 계산 (최대 1000개까지만 확인)
       const qAll = query(collection(db, 'rankings'), orderBy('score', 'desc'));
       const snapAll = await getDocs(qAll);
       const allScores = snapAll.docs.map(d => d.data().score);
-
-      // 내 점수보다 높은 점수가 몇 개인지 세면 내 순위가 나와요
       const myPosition = allScores.filter(s => s > currentScore).length + 1;
-
-      // TOP 10만 화면에 표시
       const top10 = snapAll.docs.slice(0, 10).map((doc, i) => ({ id: doc.id, rank: i + 1, ...doc.data() }));
-      setRankings(top10);
-
-      // 10위 안에 드는지 판별
-      // 현재 TOP10 중 가장 낮은 점수보다 내 점수가 높거나, 아직 10명이 안 찼으면 등록 가능
+      setAllRankings(top10);
       if (currentScore > 0) {
         const isInTop10 = top10.length < 10 || currentScore > (top10[top10.length - 1]?.score ?? 0);
-        setCanEnter(isInTop10);
-        if (!isInTop10) setTotalRank(myPosition);
+        setAllCanEnter(isInTop10);
+        if (!isInTop10) setAllTotalRank(myPosition);
       }
-
       return top10;
-    } catch(e) { console.error('랭킹 불러오기 실패:', e); return []; }
-    finally { setLoading(false); }
+    } catch(e) { console.error('전체 랭킹 불러오기 실패:', e); return []; }
+    finally { setAllLoading(false); }
   }, [currentScore]);
 
-  useEffect(() => { fetchRankings(); }, [fetchRankings]);
+  // ── 일간 랭킹 불러오기 (오늘 날짜 기록만 필터링)
+  const fetchDailyRankings = useCallback(async () => {
+    setDailyLoading(true);
+    try {
+      const qAll = query(collection(db, 'rankings'), orderBy('score', 'desc'));
+      const snapAll = await getDocs(qAll);
 
+      // 오늘 자정 이후에 등록된 기록만 골라요
+      const todayDocs = snapAll.docs.filter(doc => {
+        const data = doc.data();
+        // Firebase Timestamp → JS Date 변환
+        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+        return createdAt >= todayStart;
+      });
+
+      const dailyScores = todayDocs.map(d => d.data().score);
+      const myPosition = dailyScores.filter(s => s > currentScore).length + 1;
+      const top10 = todayDocs.slice(0, 10).map((doc, i) => ({ id: doc.id, rank: i + 1, ...doc.data() }));
+      setDailyRankings(top10);
+
+      if (currentScore > 0) {
+        const isInTop10 = top10.length < 10 || currentScore > (top10[top10.length - 1]?.score ?? 0);
+        setDailyCanEnter(isInTop10);
+        if (!isInTop10) setDailyTotalRank(myPosition);
+      }
+      return top10;
+    } catch(e) { console.error('일간 랭킹 불러오기 실패:', e); return []; }
+    finally { setDailyLoading(false); }
+  }, [currentScore]);
+
+  useEffect(() => {
+    fetchAllRankings();
+    fetchDailyRankings();
+  }, [fetchAllRankings, fetchDailyRankings]);
+
+  // ── 점수 등록 (전체 + 일간 동시에 반영)
   const handleSubmit = async () => {
     if (!nickname.trim() || submitting) return;
-
-    // ✅ 의심 점수 자동 차단
     const maxRealisticScore = currentLevel * 30000 + 200000;
-    if (currentScore > maxRealisticScore) {
-      alert('⚠️ 비정상적인 점수가 감지되어 등록이 거부되었습니다.');
-      return;
-    }
-
-    // 플레이 시간 검증 (currentPlayTime이 0이면 건너뜀)
+    if (currentScore > maxRealisticScore) { alert('⚠️ 비정상적인 점수가 감지되어 등록이 거부되었습니다.'); return; }
     const minPlaySeconds = Math.floor(currentScore / 10000);
-    if (currentPlayTime > 0 && currentPlayTime < minPlaySeconds) {
-      alert('⚠️ 플레이 시간이 너무 짧아요! 정상적인 플레이가 아닌 것 같아요.');
-      return;
-    }
+    if (currentPlayTime > 0 && currentPlayTime < minPlaySeconds) { alert('⚠️ 플레이 시간이 너무 짧아요!'); return; }
 
     setSubmitting(true);
     try {
@@ -190,9 +232,12 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
         createdAt: new Date(),
       });
       setSubmitted(true);
-      const updated = await fetchRankings();
-      const myIdx = updated.findIndex(r => r.nickname === nickname.trim() && r.score === currentScore);
-      if (myIdx !== -1) setMyRank(myIdx + 1);
+      // 등록 후 양쪽 랭킹 모두 새로고침
+      const [updatedAll, updatedDaily] = await Promise.all([fetchAllRankings(), fetchDailyRankings()]);
+      const myAllIdx   = updatedAll.findIndex(r => r.nickname === nickname.trim() && r.score === currentScore);
+      const myDailyIdx = updatedDaily.findIndex(r => r.nickname === nickname.trim() && r.score === currentScore);
+      if (myAllIdx   !== -1) setMyAllRank(myAllIdx + 1);
+      if (myDailyIdx !== -1) setMyDailyRank(myDailyIdx + 1);
     } catch(e) { console.error('점수 등록 실패:', e); alert('등록 중 오류가 발생했어요. 다시 시도해주세요.'); }
     finally { setSubmitting(false); }
   };
@@ -200,18 +245,99 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
   const medals = ['🥇','🥈','🥉'];
   const RS = rankingStyles;
 
+  // ── 현재 탭에 맞는 데이터 선택
+  const isDaily    = activeTab === 'daily';
+  const rankings   = isDaily ? dailyRankings   : allRankings;
+  const loading    = isDaily ? dailyLoading    : allLoading;
+  const canEnter   = isDaily ? dailyCanEnter   : allCanEnter;
+  const totalRank  = isDaily ? dailyTotalRank  : allTotalRank;
+  const myRank     = isDaily ? myDailyRank     : myAllRank;
+
+  // ── 랭킹 목록 렌더링 (탭 공통 사용)
+  const renderList = () => {
+    if (loading) return <div style={RS.loading}>불러오는 중... 🐟</div>;
+
+    // 일간 랭킹이 비어있을 때 → 게임 유도 버튼 표시
+    if (rankings.length === 0 && isDaily) {
+      return (
+        <div style={{ textAlign:'center', padding:'24px 12px', flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ fontSize:'36px', marginBottom:'10px' }}>🏆</div>
+          <div style={{ fontSize:'14px', fontWeight:'800', color:'#fff', marginBottom:'6px' }}>
+            오늘의 1등 자리가 비어있어요!
+          </div>
+          <div style={{ fontSize:'12px', color:'rgba(255,248,240,0.5)', marginBottom:'18px' }}>
+            {todayLabel} 첫 번째 주인공이 되세요 🌟
+          </div>
+          {/* 게임 시작 유도 버튼 — 클릭하면 랭킹 팝업 닫고 게임 즉시 시작 */}
+          <button
+            onClick={() => { onClose(); if (onStartGame) onStartGame(); }}
+            style={{
+              background:'linear-gradient(135deg,#ff6b00,#ff8c00)',
+              border:'none', borderRadius:'25px', color:'#fff',
+              fontSize:'14px', fontWeight:'900', padding:'13px 24px',
+              cursor:'pointer', boxShadow:'0 4px 20px rgba(255,107,0,0.5)',
+              WebkitTapHighlightColor:'transparent', letterSpacing:'0.5px',
+              animation:'pulseBtn 2s ease-in-out infinite',
+            }}
+          >🐟 지금 랭킹 올라보기</button>
+        </div>
+      );
+    }
+
+    // 전체 랭킹이 비어있을 때
+    if (rankings.length === 0) {
+      return <div style={{ ...RS.empty, flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}>아직 기록이 없어요. 첫 번째 주인공이 되세요! 🌟</div>;
+    }
+
+    return (
+      <div className="ranking-list" style={RS.listWrapper}>
+        {rankings.map((r, i) => {
+          const isMe = submitted && r.nickname === nickname.trim() && r.score === currentScore;
+          return (
+            <div key={r.id} style={{
+              ...RS.rankRow,
+              background: isMe ? 'linear-gradient(135deg,rgba(255,171,0,0.25),rgba(255,107,0,0.15))' : i%2===0 ? 'rgba(255,255,255,0.04)' : 'transparent',
+              border: isMe ? '1px solid rgba(255,171,0,0.5)' : '1px solid transparent',
+            }}>
+              {/* TOP3는 메달 이모지, 4위부터는 숫자 */}
+              <span style={RS.rankNum}>{i < 3 ? medals[i] : `${i+1}위`}</span>
+              <span style={RS.rankName}>
+                {r.nickname}
+                {isMe && <span style={{ fontSize:'10px', color:THEME.accentGold, marginLeft:'4px' }}>← 나</span>}
+              </span>
+              <span style={RS.rankLevel}>Lv.{r.level}</span>
+              <span style={RS.rankScore}>{r.score.toLocaleString()}점</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
-    // ⚠️ 클릭 이벤트가 뚫리도록 pointerEvents:'auto' 를 명시적으로 설정해요
     <div style={{ position:'fixed', inset:0, zIndex:9995, pointerEvents:'auto' }}>
       <div style={{ ...RS.dim, zIndex:9995 }} onClick={onClose} />
       <div style={{ ...RS.modal, zIndex:9996 }}>
         <button onClick={onClose} style={RS.closeBtn}>✕</button>
-        <div style={RS.title}>🏆 전체 랭킹 TOP 10</div>
+        <div style={RS.title}>{isDaily ? '🏆 오늘 랭킹 TOP 10' : '🏆 랭킹 TOP 10'}</div>
 
-        {/* ── 점수 등록 영역 ── */}
+        {/* ── 탭 버튼 (일간 / 전체) ── */}
+        <div style={RS.tabRow}>
+          <button
+            onClick={() => setActiveTab('daily')}
+            style={{ ...RS.tabBtn, ...(isDaily ? RS.tabBtnActive : {}) }}
+          >🌟 일간 랭킹</button>
+          <button
+            onClick={() => setActiveTab('alltime')}
+            style={{ ...RS.tabBtn, ...(!isDaily ? RS.tabBtnActive : {}) }}
+          >🏆 전체 랭킹</button>
+        </div>
+
+
+
+        {/* ── 점수 등록 영역 (게임 오버 후에만 표시) ── */}
         {currentScore > 0 && !submitted && !loading && (
           <>
-            {/* 10위 안에 들면: 닉네임 입력창 표시 */}
             {canEnter && (
               <div style={RS.submitBox}>
                 <div style={RS.submitScore}>
@@ -225,32 +351,22 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
                     maxLength={10} style={RS.input}
                     inputMode="text" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
                   />
-                  <button
-                    onClick={handleSubmit}
-                    disabled={!nickname.trim() || submitting}
-                    style={{ ...RS.submitBtn, opacity: !nickname.trim() || submitting ? 0.5 : 1, pointerEvents: !nickname.trim() || submitting ? 'none' : 'auto' }}
-                  >
+                  <button onClick={handleSubmit} disabled={!nickname.trim() || submitting}
+                    style={{ ...RS.submitBtn, opacity: !nickname.trim() || submitting ? 0.5 : 1, pointerEvents: !nickname.trim() || submitting ? 'none' : 'auto' }}>
                     {submitting ? '...' : '등록'}
                   </button>
                 </div>
               </div>
             )}
-
-            {/* 10위 밖이면: 아쉬움 문구만 표시 */}
             {canEnter === false && (
-              <div style={{
-                background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,171,0,0.2)',
-                borderRadius:'12px', padding:'14px 16px', marginBottom:'14px', textAlign:'center',
-              }}>
+              <div style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,171,0,0.2)', borderRadius:'12px', padding:'14px 16px', marginBottom:'14px', textAlign:'center' }}>
                 <div style={{ fontSize:'13px', color:'rgba(255,248,240,0.6)', marginBottom:'4px' }}>
                   내 점수: <span style={{ color:THEME.accentGold, fontWeight:'900' }}>{currentScore.toLocaleString()}점</span>
                 </div>
                 <div style={{ fontSize:'15px', fontWeight:'900', color:'#fff', lineHeight:'1.6' }}>
-                  😢 아쉽지만 전체 <span style={{ color:THEME.accentYellow }}>{totalRank}위</span>예요!
+                  😢 아쉽지만 {isDaily ? '오늘' : '전체'} <span style={{ color:THEME.accentYellow }}>{totalRank}위</span>예요!
                 </div>
-                <div style={{ fontSize:'12px', color:'rgba(255,248,240,0.5)', marginTop:'4px' }}>
-                  다시 한번 도전?! 💪
-                </div>
+                <div style={{ fontSize:'12px', color:'rgba(255,248,240,0.5)', marginTop:'4px' }}>다시 한번 도전?! 💪</div>
               </div>
             )}
           </>
@@ -258,37 +374,11 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
 
         {/* 등록 성공 메시지 */}
         {submitted && myRank && (
-          <div style={RS.myRankBox}>🎉 {myRank <= 10 ? `${myRank}위로 등록됐어요!` : '랭킹에 등록됐어요!'}</div>
+          <div style={RS.myRankBox}>🎉 {isDaily ? '오늘' : '전체'} {myRank <= 10 ? `${myRank}위로 등록됐어요!` : '랭킹에 등록됐어요!'}</div>
         )}
 
-        {loading ? (
-          <div style={RS.loading}>불러오는 중... 🐟</div>
-        ) : (
-          <div className="ranking-list" style={RS.listWrapper}>
-            {rankings.length === 0 ? (
-              <div style={RS.empty}>아직 기록이 없어요. 첫 번째 주인공이 되세요! 🌟</div>
-            ) : (
-              rankings.map((r, i) => {
-                const isMe = submitted && r.nickname === nickname.trim() && r.score === currentScore;
-                return (
-                  <div key={r.id} style={{
-                    ...RS.rankRow,
-                    background: isMe ? 'linear-gradient(135deg, rgba(255,171,0,0.25), rgba(255,107,0,0.15))' : i%2===0 ? 'rgba(255,255,255,0.04)' : 'transparent',
-                    border: isMe ? '1px solid rgba(255,171,0,0.5)' : '1px solid transparent',
-                  }}>
-                    <span style={RS.rankNum}>{i < 3 ? medals[i] : `${i+1}위`}</span>
-                    <span style={RS.rankName}>
-                      {r.nickname}
-                      {isMe && <span style={{ fontSize:'10px', color:THEME.accentGold, marginLeft:'4px' }}>← 나</span>}
-                    </span>
-                    <span style={RS.rankLevel}>Lv.{r.level}</span>
-                    <span style={RS.rankScore}>{r.score.toLocaleString()}점</span>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        )}
+        {/* ── 랭킹 목록 ── */}
+        {renderList()}
       </div>
     </div>
   );
@@ -727,7 +817,7 @@ const BungeoppangTycoon = () => {
       <>
         <TitleScreen onStart={handleStartGame} onTutorial={() => setShowTutorial(true)} onRanking={() => setShowRanking(true)} />
         {showTutorial && <TutorialModal onClose={() => setShowTutorial(false)} />}
-        {showRanking  && <RankingScreen onClose={() => setShowRanking(false)} currentScore={0} currentLevel={0} />}
+        {showRanking  && <RankingScreen onClose={() => setShowRanking(false)} currentScore={0} currentLevel={0} onStartGame={handleStartGame} />}
       </>
     );
   }
@@ -870,7 +960,7 @@ const BungeoppangTycoon = () => {
           </div>
         </>
       )}
-      {screen === 'gameover' && showRanking && <RankingScreen onClose={() => setShowRanking(false)} currentScore={score} currentLevel={level} currentPlayTime={gameStartTime ? Math.floor((Date.now() - gameStartTime) / 1000) : 9999} />}
+      {screen === 'gameover' && showRanking && <RankingScreen onClose={() => setShowRanking(false)} currentScore={score} currentLevel={level} currentPlayTime={gameStartTime ? Math.floor((Date.now() - gameStartTime) / 1000) : 9999} onStartGame={handleStartGame} />}
 
       {/* 🏠 홈으로 가기 확인 팝업 */}
       {showHomeConfirm && (
@@ -945,8 +1035,12 @@ const tutorialStyles = {
 
 const rankingStyles = {
   dim:        { position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:9992 },
-  modal:      { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:9993, background:'linear-gradient(135deg,#1a0f00,#2d1b00)', border:`2px solid rgba(255,214,0,0.5)`, borderRadius:'20px', padding:'24px 20px 20px', width:'80%', maxWidth:'360px', boxShadow:'0 20px 60px rgba(0,0,0,0.9),0 0 40px rgba(255,171,0,0.15)', animation:'modalPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275)', maxHeight:'88vh', overflowY:'auto' },
+  modal:      { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:9993, background:'linear-gradient(135deg,#1a0f00,#2d1b00)', border:`2px solid rgba(255,214,0,0.5)`, borderRadius:'20px', padding:'24px 20px 20px', width:'80%', maxWidth:'360px', boxShadow:'0 20px 60px rgba(0,0,0,0.9),0 0 40px rgba(255,171,0,0.15)', animation:'modalPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275)', height:'88vh', maxHeight:'580px', overflowY:'auto', display:'flex', flexDirection:'column' },
   closeBtn:   { position:'absolute', top:'12px', right:'14px', background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', color:'rgba(255,255,255,0.6)', width:'28px', height:'28px', borderRadius:'50%', fontSize:'12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' },
+  // ── 탭 버튼 줄 ──
+  tabRow:       { display:'flex', gap:'8px', marginBottom:'14px', background:'rgba(0,0,0,0.3)', borderRadius:'20px', padding:'4px' },
+  tabBtn:       { flex:1, padding:'8px 0', borderRadius:'16px', border:'none', background:'transparent', color:'rgba(255,248,240,0.5)', fontSize:'12px', fontWeight:'800', cursor:'pointer', WebkitTapHighlightColor:'transparent', transition:'all 0.2s', letterSpacing:'0.3px' },
+  tabBtnActive: { background:'linear-gradient(135deg,#ff6b00,#ff8c00)', color:'#fff', boxShadow:'0 2px 10px rgba(255,107,0,0.4)' },
   title:      { textAlign:'center', fontSize:'17px', fontWeight:'900', color:'#ffd600', marginBottom:'16px', letterSpacing:'1px' },
   submitBox:  { background:'rgba(255,171,0,0.1)', border:'1px solid rgba(255,171,0,0.3)', borderRadius:'12px', padding:'12px', marginBottom:'14px' },
   submitScore:{ fontSize:'12px', color:'rgba(255,248,240,0.7)', marginBottom:'8px', textAlign:'center' },
@@ -956,7 +1050,7 @@ const rankingStyles = {
   myRankBox:  { background:'linear-gradient(135deg,rgba(255,171,0,0.2),rgba(255,107,0,0.1))', border:'1px solid rgba(255,171,0,0.4)', borderRadius:'10px', padding:'10px', marginBottom:'14px', textAlign:'center', color:'#ffd600', fontSize:'13px', fontWeight:'800' },
   loading:    { textAlign:'center', color:'rgba(255,248,240,0.5)', padding:'30px 0', fontSize:'13px' },
   empty:      { textAlign:'center', color:'rgba(255,248,240,0.5)', padding:'20px 0', fontSize:'12px' },
-  listWrapper:{ maxHeight:'240px', overflowY:'auto', display:'flex', flexDirection:'column', gap:'4px', scrollbarWidth:'thin', scrollbarColor:'rgba(255,171,0,0.3) transparent' },
+  listWrapper:{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:'4px', scrollbarWidth:'thin', scrollbarColor:'rgba(255,171,0,0.3) transparent', minHeight:0 },
   rankRow:    { display:'flex', alignItems:'center', gap:'8px', padding:'9px 10px', borderRadius:'10px', transition:'background 0.2s', flexShrink:0 },
   rankNum:    { fontSize:'14px', fontWeight:'900', minWidth:'36px', textAlign:'center', color:'#ffd600' },
   rankName:   { flex:1, fontSize:'13px', fontWeight:'700', color:'#fff8f0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' },
