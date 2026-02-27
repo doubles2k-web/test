@@ -225,27 +225,61 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
     if (!nickname.trim() || submitting) return;
 
     setSubmitting(true);
+    setSubmitError('');
+    const trimmedNick = nickname.trim().slice(0, 10);
+
+    // ── Firebase에 점수 쓰기 (최대 3번 자동 재시도) ──────────────────
+    // 일시적인 네트워크 오류나 Firebase 서버 응답 지연에 대응해요.
+    // 실패할 때마다 0.8초 → 1.6초 → 포기 순으로 기다렸다가 재시도해요.
+    let writeError = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await addDoc(collection(db, 'rankings'), {
+          nickname: trimmedNick,
+          score: currentScore,
+          level: currentLevel,
+          playTime: currentPlayTime,
+          createdAt: new Date(),
+        });
+        writeError = null; // 성공!
+        break;
+      } catch (e) {
+        writeError = e;
+        const code = e?.code ?? '';
+        console.warn(`점수 등록 시도 ${attempt}/3 실패 [${code}]:`, e.message ?? e);
+        // permission-denied(보안 규칙 차단)는 재시도해도 소용없으니 바로 중단
+        if (code === 'permission-denied' || attempt === 3) break;
+        // 다음 시도 전에 잠깐 대기 (0.8s, 1.6s)
+        await new Promise(res => setTimeout(res, attempt * 800));
+      }
+    }
+
+    // 3번 다 실패하면 에러 메시지 표시 후 종료
+    if (writeError) {
+      const code = writeError?.code ?? '';
+      const msg = code === 'permission-denied'
+        ? 'Firebase 보안 규칙이 만료됐어요. Console에서 규칙을 연장해주세요 🔒'
+        : `등록 실패 (${code || '네트워크 오류'}). 잠시 후 다시 시도해보세요 😢`;
+      console.error('점수 등록 최종 실패:', writeError);
+      setSubmitError(msg);
+      setSubmitting(false);
+      return;
+    }
+
+    // ── 쓰기 성공 → 화면 갱신 ───────────────────────────────────────
     try {
-      setSubmitError(''); // 이전 에러 초기화
-      await addDoc(collection(db, 'rankings'), {
-        nickname: nickname.trim().slice(0, 10),
-        score: currentScore,
-        level: currentLevel,
-        playTime: currentPlayTime,
-        createdAt: new Date(),
-      });
       setSubmitted(true);
-      // 등록 후 양쪽 랭킹 모두 새로고침
       const [updatedAll, updatedDaily] = await Promise.all([fetchAllRankings(), fetchDailyRankings()]);
-      const myAllIdx   = updatedAll.findIndex(r => r.nickname === nickname.trim() && r.score === currentScore);
-      const myDailyIdx = updatedDaily.findIndex(r => r.nickname === nickname.trim() && r.score === currentScore);
+      const myAllIdx   = updatedAll.findIndex(r => r.nickname === trimmedNick && r.score === currentScore);
+      const myDailyIdx = updatedDaily.findIndex(r => r.nickname === trimmedNick && r.score === currentScore);
       if (myAllIdx   !== -1) setMyAllRank(myAllIdx + 1);
       if (myDailyIdx !== -1) setMyDailyRank(myDailyIdx + 1);
-    } catch(e) {
-      console.error('점수 등록 실패:', e);
-      setSubmitError('등록에 실패했어요. 인터넷 연결을 확인하고 다시 시도해보세요 📶');
+    } catch (e) {
+      console.warn('랭킹 새로고침 실패 (등록은 완료됨):', e);
+      // 등록 자체는 성공했으니 submitted 유지 — 문제없음
+    } finally {
+      setSubmitting(false);
     }
-    finally { setSubmitting(false); }
   };
 
   const medals = ['🥇','🥈','🥉'];
