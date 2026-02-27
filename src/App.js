@@ -218,16 +218,13 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
   // ── 점수 등록 (전체 + 일간 동시에 반영)
   const handleSubmit = async () => {
     if (!nickname.trim() || submitting) return;
-    const maxRealisticScore = currentLevel * 30000 + 200000;
-    if (currentScore > maxRealisticScore) { alert('⚠️ 비정상적인 점수가 감지되어 등록이 거부되었습니다.'); return; }
-    const minPlaySeconds = Math.floor(currentScore / 10000);
-    if (currentPlayTime > 0 && currentPlayTime < minPlaySeconds) { alert('⚠️ 플레이 시간이 너무 짧아요!'); return; }
 
     setSubmitting(true);
     try {
       await addDoc(collection(db, 'rankings'), {
         nickname: nickname.trim().slice(0, 10),
-        score: currentScore, level: currentLevel,
+        score: currentScore,
+        level: currentLevel,
         playTime: currentPlayTime,
         createdAt: new Date(),
       });
@@ -238,7 +235,9 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
       const myDailyIdx = updatedDaily.findIndex(r => r.nickname === nickname.trim() && r.score === currentScore);
       if (myAllIdx   !== -1) setMyAllRank(myAllIdx + 1);
       if (myDailyIdx !== -1) setMyDailyRank(myDailyIdx + 1);
-    } catch(e) { console.error('점수 등록 실패:', e); alert('등록 중 오류가 발생했어요. 다시 시도해주세요.'); }
+    } catch(e) {
+      console.error('점수 등록 실패:', e);
+    }
     finally { setSubmitting(false); }
   };
 
@@ -1017,7 +1016,7 @@ const titleStyles = {
 
 const tutorialStyles = {
   dim:          { position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', zIndex:8000 },
-  modal:        { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:8001, background:'linear-gradient(135deg,#1a0f00,#2d1b00)', border:`2px solid rgba(255,171,0,0.5)`, borderRadius:'20px', padding:'24px 20px 20px', width:'80%', maxWidth:'340px', boxShadow:'0 20px 60px rgba(0,0,0,0.8),0 0 30px rgba(255,107,0,0.2)', animation:'modalPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275)', maxHeight:'85vh', overflowY:'auto' },
+  modal:        { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:8001, background:'linear-gradient(135deg,#1a0f00,#2d1b00)', border:`2px solid rgba(255,171,0,0.5)`, borderRadius:'20px', padding:'24px 20px 20px', width:'80%', maxWidth:'340px', boxShadow:'0 20px 60px rgba(0,0,0,0.8),0 0 30px rgba(255,107,0,0.2)', animation:'modalPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275)', maxHeight:'60vh', overflowY:'auto' },
   closeBtn:     { position:'absolute', top:'12px', right:'14px', background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', color:'rgba(255,255,255,0.6)', width:'28px', height:'28px', borderRadius:'50%', fontSize:'12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' },
   modalTitle:   { textAlign:'center', fontSize:'15px', fontWeight:'800', color:THEME.accentGold, marginBottom:'14px', letterSpacing:'1px' },
   dots:         { display:'flex', justifyContent:'center', gap:'7px', marginBottom:'18px' },
@@ -1035,7 +1034,7 @@ const tutorialStyles = {
 
 const rankingStyles = {
   dim:        { position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:9992 },
-  modal:      { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:9993, background:'linear-gradient(135deg,#1a0f00,#2d1b00)', border:`2px solid rgba(255,214,0,0.5)`, borderRadius:'20px', padding:'24px 20px 20px', width:'80%', maxWidth:'360px', boxShadow:'0 20px 60px rgba(0,0,0,0.9),0 0 40px rgba(255,171,0,0.15)', animation:'modalPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275)', height:'88vh', maxHeight:'580px', overflowY:'auto', display:'flex', flexDirection:'column' },
+  modal:      { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:9993, background:'linear-gradient(135deg,#1a0f00,#2d1b00)', border:`2px solid rgba(255,214,0,0.5)`, borderRadius:'20px', padding:'24px 20px 20px', width:'80%', maxWidth:'360px', boxShadow:'0 20px 60px rgba(0,0,0,0.9),0 0 40px rgba(255,171,0,0.15)', animation:'modalPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275)', maxHeight:'60vh', overflowY:'auto', display:'flex', flexDirection:'column' },
   closeBtn:   { position:'absolute', top:'12px', right:'14px', background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', color:'rgba(255,255,255,0.6)', width:'28px', height:'28px', borderRadius:'50%', fontSize:'12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' },
   // ── 탭 버튼 줄 ──
   tabRow:       { display:'flex', gap:'8px', marginBottom:'14px', background:'rgba(0,0,0,0.3)', borderRadius:'20px', padding:'4px' },
