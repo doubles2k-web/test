@@ -148,6 +148,7 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
   const [nickname, setNickname]     = useState('');
   const [submitted, setSubmitted]   = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(''); // 등록 실패 시 에러 메시지
   const [myAllRank, setMyAllRank]   = useState(null);
   const [myDailyRank, setMyDailyRank] = useState(null);
 
@@ -225,6 +226,7 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
 
     setSubmitting(true);
     try {
+      setSubmitError(''); // 이전 에러 초기화
       await addDoc(collection(db, 'rankings'), {
         nickname: nickname.trim().slice(0, 10),
         score: currentScore,
@@ -241,6 +243,7 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
       if (myDailyIdx !== -1) setMyDailyRank(myDailyIdx + 1);
     } catch(e) {
       console.error('점수 등록 실패:', e);
+      setSubmitError('등록에 실패했어요. 인터넷 연결을 확인하고 다시 시도해보세요 📶');
     }
     finally { setSubmitting(false); }
   };
@@ -349,7 +352,7 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
                 </div>
                 <div style={RS.inputRow}>
                   <input type="text" placeholder="닉네임 입력 (최대 10자)"
-                    value={nickname} onChange={e => setNickname(e.target.value)}
+                    value={nickname} onChange={e => { setNickname(e.target.value); setSubmitError(''); }}
                     onKeyDown={e => e.key === 'Enter' && handleSubmit()}
                     onClick={e => e.stopPropagation()}
                     maxLength={10} style={{ ...RS.input, touchAction:'manipulation' }}
@@ -360,9 +363,15 @@ const RankingScreen = ({ onClose, currentScore, currentLevel, currentPlayTime = 
                     onTouchEnd={(e) => { e.stopPropagation(); }}
                     disabled={!nickname.trim() || submitting}
                     style={{ ...RS.submitBtn, opacity: !nickname.trim() || submitting ? 0.5 : 1, pointerEvents: !nickname.trim() || submitting ? 'none' : 'auto', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>
-                    {submitting ? '...' : '등록'}
+                    {submitting ? '⏳' : '등록'}
                   </button>
                 </div>
+                {/* 등록 실패 에러 메시지 */}
+                {submitError && (
+                  <div style={{ marginTop:'8px', fontSize:'12px', fontWeight:'700', color:'#ff6b6b', textAlign:'center', lineHeight:'1.5' }}>
+                    ⚠️ {submitError}
+                  </div>
+                )}
               </div>
             )}
             {canEnter === false && (
@@ -647,6 +656,7 @@ const BungeoppangTycoon = () => {
 
   // 게임 초기화
   const resetGame = () => {
+    setShowRanking(false);   // ✅ 랭킹 팝업 반드시 닫기 (이전 게임 상태 완전 초기화)
     setMoney(0); setScore(0); setLevel(1); setCombo(0);
     setLives(GAME_CONFIG.maxLives); setInventory(0);
     setCustomers([]); setParticles([]);
@@ -1035,8 +1045,10 @@ const BungeoppangTycoon = () => {
         </>
       )}
       {/* 랭킹 팝업 (게임오버 후 자동 오픈) */}
+      {/* key={gameStartTime} → 게임 세션마다 컴포넌트를 완전히 새로 만들어 이전 상태가 남지 않게 함 */}
       {screen === 'gameover' && showRanking && (
         <RankingScreen
+          key={`ranking-${gameStartTime}`}
           onClose={() => setShowRanking(false)}
           currentScore={score} currentLevel={level}
           currentPlayTime={gameStartTime ? Math.floor((Date.now() - gameStartTime) / 1000) : 9999}
