@@ -50,6 +50,7 @@ if (typeof document !== 'undefined') {
     @keyframes modalPop { 0%{transform:translate(-50%,-50%) scale(0.8);opacity:0} 100%{transform:translate(-50%,-50%) scale(1);opacity:1} }
     @keyframes emojiPop { 0%{transform:scale(0.5) rotate(-10deg);opacity:0} 70%{transform:scale(1.15) rotate(5deg)} 100%{transform:scale(1) rotate(0deg);opacity:1} }
     @keyframes dimFadeIn { 0%{opacity:0} 100%{opacity:1} }
+    @keyframes resultBoxPop { 0%{transform:scale(0.82);opacity:0} 70%{transform:scale(1.03);opacity:1} 100%{transform:scale(1);opacity:1} }
     @keyframes gameoverSlideUp { 0%{opacity:0;transform:translate(-50%,-50%) translateY(60px)} 65%{opacity:1;transform:translate(-50%,-50%) translateY(-8px)} 100%{opacity:1;transform:translate(-50%,-50%) translateY(0)} }
     @keyframes gameoverTitlePulse { 0%,100%{text-shadow:0 0 20px rgba(255,71,87,0.7),0 0 40px rgba(255,71,87,0.4)} 50%{text-shadow:0 0 40px rgba(255,71,87,1),0 0 80px rgba(255,71,87,0.6)} }
     button:active { transform:scale(0.94); }
@@ -1004,7 +1005,7 @@ const BungeoppangTycoon = () => {
           {/* ③ done 단계: 랭킹 닫은 후 → 결과 박스 + 버튼들 */}
           {gameoverPhase === 'done' && !showRanking && (
             <div style={{ ...styles.gameoverContainer, zIndex:5001 }}>
-              <div style={{ ...styles.gameoverBox, animation:'modalPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275)' }}>
+              <div style={{ ...styles.gameoverBox, animation:'resultBoxPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275) forwards' }}>
                 <div style={styles.gameoverTitle}>게임 오버!</div>
                 <div style={styles.gameoverEmoji}>😭</div>
                 <div style={styles.gameoverStats}>
